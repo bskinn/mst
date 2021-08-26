@@ -1,17 +1,46 @@
-import json
+r"""*Core module for* ``mst``.
+
+``mst`` implements tooling to scrape and store meeting info
+from MS&T conferences.
+
+**Author**
+    Brian Skinn (brian.skinn@gmail.com)
+
+**File Created**
+    26 Aug 2021
+
+**Copyright**
+    \(c) Brian Skinn 2021
+
+**Source Repository**
+    https://github.com/bskinn/mst
+
+**Documentation**
+    *pending*
+
+**License**
+    The MIT License; see |license_txt|_ for full license terms
+
+**Members**
+
+"""
+
+
+import os
 import sys
 from pathlib import Path
-from typing import Union
 
 import bs4  # type: ignore
 import requests as rq
+import tinydb as tdb
 from bs4 import BeautifulSoup as BSoup  # type: ignore
 
 URL_ROOT: str = "http://www.programmaster.org"
-URL_MST18: str = "http://www.programmaster.org/PM/PM.nsf/Home?OpenForm&ParentUNID=8B0BF2B4D6505BA8852580CF005B20F8"
-URL_MST19: str = "http://www.programmaster.org/PM/PM.nsf/Home?OpenForm&ParentUNID=7E9C94165C3B857D852582340050B6D7"
-URL_MST20: str = "http://www.programmaster.org/PM/PM.nsf/Home?OpenForm&ParentUNID=EB8595226BB57C208525831F00014E65"
-URL_MST21: str = "http://www.programmaster.org/PM/PM.nsf/Home?OpenForm&ParentUNID=B6C7F14C3E2EE67A852584D3004B3D35"
+URL_MST_STEM: str = "http://www.programmaster.org/PM/PM.nsf/Home?OpenForm&ParentUNID="
+URL_MST18: str = URL_MST_STEM + "8B0BF2B4D6505BA8852580CF005B20F8"
+URL_MST19: str = URL_MST_STEM + "7E9C94165C3B857D852582340050B6D7"
+URL_MST20: str = URL_MST_STEM + "EB8595226BB57C208525831F00014E65"
+URL_MST21: str = URL_MST_STEM + "B6C7F14C3E2EE67A852584D3004B3D35"
 
 
 KEY_SYMP_NAME: str = "symp_name"
@@ -59,16 +88,12 @@ def get_prez_data(*, url: str) -> dict[str, str]:
 
 
 def scrape_meeting(
-    *, url: str, verbose: bool = False, width: int = 40
-) -> dict[str, dict[str, dict[str, str]]]:
+    *, db: tdb.TinyDB, url: str, verbose: bool = False, width: int = 40
+) -> None:
     """Run all the things."""
-    meeting_data = {}
-
     for symp_anchor in get_symposia_anchors(url=url):
         symp_name: str = symp_anchor.text
         symp_url: str = URL_ROOT + symp_anchor["href"]
-
-        symp_data = {}
 
         if verbose:
             print(f"Starting '{symp_name[:width]} ...'")
@@ -80,16 +105,19 @@ def scrape_meeting(
                 print(f"... Talk '{prez_name[:width]} ...'")
 
             prez_data = get_prez_data(url=(prez_url := URL_ROOT + prez_anchor["href"]))
-            prez_data.update({KEY_PREZ_URL: prez_url})
+            prez_data.update(
+                {
+                    KEY_PREZ_NAME: prez_name,
+                    KEY_PREZ_URL: prez_url,
+                    KEY_SYMP_NAME: symp_name,
+                    KEY_SYMP_URL: symp_url,
+                }
+            )
 
-            symp_data.update({prez_name: prez_data})
+            db.insert(prez_data)
 
         if verbose:
             print(f"Done with '{symp_name[:width]} ...'\n")
-
-        meeting_data.update({symp_name: symp_data})
-
-    return meeting_data
 
 
 def check_data(data: dict[str, dict[str, dict[str, str]]], /) -> None:
@@ -103,6 +131,11 @@ def check_data(data: dict[str, dict[str, dict[str, str]]], /) -> None:
                 print(prez_key)
                 print(prez["prez_authors"])
                 print(prez["prez_abstract"], end="\n\n\n")
+
+
+def bind_db(*, path: Path) -> tdb.TinyDB:
+    """Bind a database at the given Path."""
+    return tdb.TinyDB(os.fsdecode(path))
 
 
 def main() -> int:
