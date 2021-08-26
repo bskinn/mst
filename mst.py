@@ -132,7 +132,12 @@ def scrape_meeting(
             if verbose:
                 print(f"... Talk '{prez_name[:width]} ...'")
 
-            prez_data = get_prez_data(url=(prez_url := url_root + prez_anchor["href"]))
+            try:
+                prez_data = get_prez_data(url=(prez_url := url_root + prez_anchor["href"]))
+            except Exception:
+                # Just skip talks that pose problems
+                prez_data = {KEY_AUTHORS: "N/A", KEY_ABSTRACT: "N/A"}
+
             prez_data.update(
                 {
                     KEY_PREZ_NAME: prez_name,
