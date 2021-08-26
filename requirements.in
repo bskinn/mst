@@ -1,0 +1,6 @@
+beautifulsoup4
+pytest
+pytest-cov
+requests
+tinydb
+tox
