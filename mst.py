@@ -27,6 +27,7 @@ from MS&T conferences.
 
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -34,14 +35,22 @@ import bs4
 import requests as rq
 import tinydb as tdb
 from bs4 import BeautifulSoup as BSoup
+from opnieuw import retry
 
-URL_ROOT: str = "http://www.programmaster.org"
+
 URL_MST_STEM: str = "http://www.programmaster.org/PM/PM.nsf/Home?OpenForm&ParentUNID="
 URL_MST18: str = URL_MST_STEM + "8B0BF2B4D6505BA8852580CF005B20F8"
 URL_MST19: str = URL_MST_STEM + "7E9C94165C3B857D852582340050B6D7"
 URL_MST20: str = URL_MST_STEM + "EB8595226BB57C208525831F00014E65"
 URL_MST21: str = URL_MST_STEM + "B6C7F14C3E2EE67A852584D3004B3D35"
 
+URL_ARCHIVE_TEMPLATE: str = (
+    "https://web.archive.org/web/{tstamp}/http://"
+    "www.programmaster.org/PM/PM.nsf/Home?OpenForm&ParentUNID={UID}"
+)
+URL_MST17: str = URL_ARCHIVE_TEMPLATE.format(
+    tstamp="20180210214606", UID="AF3AC2183CA786AA85257EE6004E0E4E"
+)
 
 KEY_SYMP_NAME: str = "symp_name"
 KEY_SYMP_URL: str = "symp_url"
@@ -53,7 +62,14 @@ KEY_PREZ_URL: str = "prez_url"
 INDEX_AUTHORS: int = 10
 INDEX_ABSTRACT: int = 14
 
+p_root = re.compile("(https?://[^/]+)/", re.I)
 
+
+@retry(
+    max_calls_total=10,
+    retry_window_after_first_call_in_seconds=120,
+    retry_on_exceptions=(rq.exceptions.RequestException),
+)
 def get_symposia_anchors(*, url: str) -> list[bs4.Tag]:
     """Get the list of symposia URLs posted at the given top URL."""
     resp = rq.get(url)
@@ -66,6 +82,11 @@ def get_symposia_anchors(*, url: str) -> list[bs4.Tag]:
     ]
 
 
+@retry(
+    max_calls_total=10,
+    retry_window_after_first_call_in_seconds=120,
+    retry_on_exceptions=(rq.exceptions.RequestException),
+)
 def get_prez_anchors(*, url: str) -> list[bs4.Tag]:
     """Get the list of talks for a given symposium."""
     resp = rq.get(url)
@@ -74,6 +95,11 @@ def get_prez_anchors(*, url: str) -> list[bs4.Tag]:
     return [a for a in soup("a") if a["href"].endswith("OpenDocument")]
 
 
+@retry(
+    max_calls_total=10,
+    retry_window_after_first_call_in_seconds=120,
+    retry_on_exceptions=(rq.exceptions.RequestException),
+)
 def get_prez_data(*, url: str) -> dict[str, str]:
     """Scrape presentation data from a presentation page."""
     resp = rq.get(url)
@@ -91,9 +117,11 @@ def scrape_meeting(
     *, db: tdb.TinyDB, url: str, verbose: bool = False, width: int = 40
 ) -> None:
     """Run all the things."""
+    url_root: str = p_root.match(url).group(1)
+
     for symp_anchor in get_symposia_anchors(url=url):
         symp_name: str = symp_anchor.text
-        symp_url: str = URL_ROOT + symp_anchor["href"]
+        symp_url: str = url_root + symp_anchor["href"]
 
         if verbose:
             print(f"Starting '{symp_name[:width]} ...'")
@@ -104,7 +132,7 @@ def scrape_meeting(
             if verbose:
                 print(f"... Talk '{prez_name[:width]} ...'")
 
-            prez_data = get_prez_data(url=(prez_url := URL_ROOT + prez_anchor["href"]))
+            prez_data = get_prez_data(url=(prez_url := url_root + prez_anchor["href"]))
             prez_data.update(
                 {
                     KEY_PREZ_NAME: prez_name,
