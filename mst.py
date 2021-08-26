@@ -30,10 +30,10 @@ import os
 import sys
 from pathlib import Path
 
-import bs4  # type: ignore
+import bs4
 import requests as rq
 import tinydb as tdb
-from bs4 import BeautifulSoup as BSoup  # type: ignore
+from bs4 import BeautifulSoup as BSoup
 
 URL_ROOT: str = "http://www.programmaster.org"
 URL_MST_STEM: str = "http://www.programmaster.org/PM/PM.nsf/Home?OpenForm&ParentUNID="
@@ -120,20 +120,24 @@ def scrape_meeting(
             print(f"Done with '{symp_name[:width]} ...'\n")
 
 
-def check_data(data: dict[str, dict[str, dict[str, str]]], /) -> None:
+def check_data(db: tdb.TinyDB, /) -> None:
     """Rough check to be sure data pulled ok."""
-    for symp_key in data:
-        for prez_key in (symp := data[symp_key]):
-            if (
-                len((prez := symp[prez_key])["prez_abstract"]) < 100
-                or len(prez["prez_authors"]) < 10
-            ):
-                print(prez_key)
-                print(prez["prez_authors"])
-                print(prez["prez_abstract"], end="\n\n\n")
+    Prez = tdb.Query()  # noqa: N806
+
+    def item_printer(item: dict[str, str], /) -> None:
+        """Print the item info prettily."""
+        print(item[KEY_PREZ_NAME])
+        print(item[KEY_AUTHORS])
+        print(item[KEY_ABSTRACT], end="\n\n")
+
+    for item in db.search(
+        (Prez.prez_abstract.matches(".{101}"))
+        | (Prez.prez_authors.matches("^.{0,10}$"))
+    ):
+        item_printer(item)
 
 
-def bind_db(*, path: Path) -> tdb.TinyDB:
+def bind_db(path: Path, /) -> tdb.TinyDB:
     """Bind a database at the given Path."""
     return tdb.TinyDB(os.fsdecode(path))
 
